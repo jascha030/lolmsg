@@ -19,9 +19,11 @@ if ! (( ${+DOT_PREFER_TPUT_OVER_ENV} )); then
     export DOT_PREFER_TPUT_OVER_ENV=false
 fi
 
-export fpath=( ${fpath[@]} ./lolmsg )
+local _LOLMSG_PATH=${0:a:h}
 
-autoload -Uz ./lolmsg
+export fpath=( "$_LOLMSG_PATH" ${fpath[@]} )
+
+autoload -Uz "$_LOLMSG_PATH/lolmsg"
 
 function lolmsg {
     # undefined
