@@ -170,7 +170,7 @@ function __with_i_msg {
 
 function __exit_intro {
     echoti rmcup
-    echoti cup $(( (${t_lines}-${ph}) + 1 )) 0
+    echoti cup $(( (${t_lines}-${ph}) + 2 )) 0
     echoti cnorm
 }
 
