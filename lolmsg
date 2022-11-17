@@ -16,13 +16,10 @@ typeset -A characterset_cols=(
 
 local msg=$1 \
     lol_anmial="lcat"            \
-    t_cols=0                     \
-    t_lines=0                    \
     t_center=0                   \
     char_height=7                \
     line_margin=2                \
     ph=6                         \
-    msg_cols=0                   \
     tl_center=0
 
 local row_height=$((${char_height}+${line_margin}))
@@ -35,29 +32,8 @@ ph=$2
 
 #---------------------------------------------------------------------------------------------------------------------#
 
-function __get_dimmensions {
-    if [[ "$DOT_PREFER_TPUT_OVER_ENV" == true ]]; then
-        t_cols=$(echoti cols)
-        t_lines=$(echoti lines)
-    else
-        t_cols=${COLUMNS}
-        t_lines=${LINES}
-    fi
-
-    tl_center=$((${t_lines}/2))
-}
 
 # Calc. output msg width.
-function __get_msg_cols {
-    local _str_cols=0 i c
-
-    for (( i=0; i<${#msg}; i++ )); do
-        _str_cols=$(( ${_str_cols} + ${characterset_cols[${msg:$i:1}]} ))
-    done
-
-    msg_cols=${_str_cols}
-}
-
 
 function __pad_lines {
     printf '\n%.0s' {1.."$1"}
@@ -91,35 +67,36 @@ function __lolmsg_output {
 
 
 function __print_lolmsg_output {
-    local required_rows=0    \
-        required_lines=0   \
-        ol_center=0        \
-        start_output_at=0  \
-        occupied_lines=0   \
-
     # Calc. term dimmensions & figlet output width in cols.
-    __get_dimmensions
-    __get_msg_cols "$msg"
+    local -i t_cols=${COLUMNS}
+    local -i t_lines=${LINES}
+    local -i tl_center=$((${t_lines}/2))
+
+    # Calculate msg size
+    local _str_cols=0 i c
+    for (( i=0; i<${#msg}; i++ )); do
+        _str_cols=$(( ${_str_cols} + ${characterset_cols[${msg:$i:1}]} ))
+    done
+
+    local msg_cols=${_str_cols}
 
     # Calc. #times term width fits in output width, tells us the amt. of rows that figlet outputs.
-    required_rows=$(( (${msg_cols}/${t_cols})+( (${msg_cols}%${t_cols}) > 0 ) ))
+    local -i required_rows=$(( (${msg_cols}/${t_cols})+( (${msg_cols}%${t_cols}) > 0 ) ))
 
     # Calc. output + center in lines, tells us where to start figlet output.
-    required_lines=$((${required_rows}*${row_height}))
-    ol_center=$((${required_lines}/2))
-    start_output_at=$((${tl_center}-${ol_center}))
+    local -i required_lines=$((${required_rows}*${row_height}))
+    local -i ol_center=$((${required_lines}/2))
+    local -i start_output_at=$((${tl_center}-${ol_center}))
 
-    __lolmsg_output ${start_output_at} ${msg} 1
+    __lolmsg_output "${start_output_at}" "${msg}" 1
 
     if [[ $# == 1 ]]; then
-        local extra_text_pos
-
         # Get position after figlet output.
-        occupied_lines=$((${start_output_at}+${required_lines}))
-        extra_text_pos=$((${occupied_lines}+3))
+        local -i occupied_lines=$((${start_output_at}+${required_lines}))
+        local -i extra_text_pos=$((${occupied_lines}+3))
+        local -i render_pos=$(( (${t_cols}/2) - ( ${#1} / 2) ))
 
-        echoti cup $extra_text_pos $(( (${t_cols}/2) - ( ${#1} / 2) ))
-        print "$1"
+        echoti cup $extra_text_pos $render_pos; print "$1"
     fi
 }
 
