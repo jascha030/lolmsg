@@ -148,14 +148,9 @@ function __exit_intro {
 function __open_intro_screen {
     echoti civis
     echoti smcup
-
     __with_i_msg
-
-    builtin trap __with_i_msg WINCH
-
     read -k1 -s
-
-    __exit_intro; builtin trap - WINCH
+    __exit_intro
 }
 
 
