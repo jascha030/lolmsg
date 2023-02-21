@@ -65,7 +65,6 @@ function __lolmsg_output {
     __pad_lines  "$3"
 }
 
-
 function __print_lolmsg_output {
     # Calc. term dimmensions & figlet output width in cols.
     local -i t_cols=${COLUMNS}
@@ -101,7 +100,7 @@ function __print_lolmsg_output {
 }
 
 # (Experimental/W.I.P.) NCurses version.
-function __open_curses_intro {
+function __open_curses_intro() {
     zmodload zsh/curses && {
         local i
 
@@ -113,7 +112,7 @@ function __open_curses_intro {
         zcurses clear stdscr redraw
         zcurses refresh stdscr
 
-        zcurses addwin intro ${t_lines} ${t_cols} 0 0
+        zcurses addwin intro "${t_lines} ${t_cols}" 0 0
         zcurses scroll intro off
         zcurses attr intro blink
 
@@ -125,7 +124,7 @@ function __open_curses_intro {
         until [[ $i == [\ ] ]]; do
             zcurses input intro i
         done
-        } always {
+    } always {
         zcurses delwin intro
         echoti cnorm
         zcurses end
@@ -138,11 +137,14 @@ function __with_i_msg {
     __print_lolmsg_output $'[ Press any key ]'
 }
 
-
 function __exit_intro {
     echoti rmcup
     echoti cup $(( (${t_lines}-${ph}) + 2 )) 0
     echoti cnorm
+}
+
+function __open_matrix_screen {
+    neo --message=$(__with_i_msg)
 }
 
 function __open_intro_screen {
@@ -152,7 +154,6 @@ function __open_intro_screen {
     read -k1 -s
     __exit_intro
 }
-
 
 #---------------------------------------------------------------------------------------------------------------------#
 
@@ -165,7 +166,11 @@ function __run {
     if [[ "$curses" == "curses" ]]; then
         __open_curses_intro
     else
-        __open_intro_screen
+        if ((RANDOM % 2 == 0)); then
+            neo --message="Enter da HACKERMAN 030 Mode" -D --fps=80 -S 8 -s -F -a
+        else
+            __open_intro_screen
+        fi
     fi
 }
 
