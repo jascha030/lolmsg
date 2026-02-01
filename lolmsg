@@ -50,9 +50,10 @@ function __output_fig {
 
     [[ "$_current_scheme" == 0 ]] && local _grad="warm" || local _grad="rainbow"
 
-    if [[ "$_IS_VIMTERM" == false && ${curses} == 0 ]]; then
+    if (( ! ${+MYVIMRC} && curses == 0 )); then
         echoti blink
     fi
+
 
     print "$_output" | lolcrab -g "$_grad"
 }
