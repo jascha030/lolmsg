@@ -4,7 +4,7 @@ emulate -L zsh
 
 local msg=$1
 
-function __pad_lines {
+pad_lines() {
     local -i n=$1
     local -i i
 
@@ -13,7 +13,7 @@ function __pad_lines {
     done
 }
 
-function __update_tty_size {
+update_tty_size() {
     local -a size
     size=(${(s: :)$(stty size </dev/tty 2>/dev/null)})
     (( ${#size} == 2 )) || return 1
@@ -22,7 +22,7 @@ function __update_tty_size {
     COLUMNS=$size[2]
 }
 
-function __output_fig {
+output_fig() {
     local rendered_output=$1
     local _current_scheme _grad
 
@@ -36,7 +36,7 @@ function __output_fig {
     print -r -- "$rendered_output" | lolcrab -g "$_grad"
 }
 
-function __print_lolmsg_output {
+print_lolmsg_output() {
     local prompt=$1
     local -i t_cols=$COLUMNS
     local -i t_lines=$LINES
@@ -58,9 +58,9 @@ function __print_lolmsg_output {
     local -i start_output_at=$(( (t_lines - total_height) / 2 ))
     (( start_output_at < 0 )) && start_output_at=0
 
-    __pad_lines "$start_output_at"
-    __output_fig "$fig_output"
-    __pad_lines 1
+    pad_lines "$start_output_at"
+    output_fig "$fig_output"
+    pad_lines 1
 
     if [[ -n "$prompt" ]]; then
         local -i extra_text_pos=$(( start_output_at + fig_height + gap ))
@@ -75,32 +75,32 @@ function __print_lolmsg_output {
     fi
 }
 
-function __exit_intro {
+exit_intro() {
     echoti rmcup
     echoti cnorm
 }
 
-function __open_intro_screen {
+open_intro_screen() {
     echoti civis
     echoti smcup
 
     {
         local key prev_cols prev_lines
 
-        __update_tty_size || return 1
+        update_tty_size || return 1
         prev_cols=$COLUMNS
         prev_lines=$LINES
 
         while true; do
             echoti clear
-            __print_lolmsg_output $'[ Press any key ]'
+            print_lolmsg_output $'[ Press any key ]'
 
             while true; do
                 if read -k1 -s -t 0.1 key </dev/tty 2>/dev/null; then
                     return
                 fi
 
-                __update_tty_size || continue
+                update_tty_size || continue
                 (( COLUMNS == prev_cols && LINES == prev_lines )) && continue
                 break
             done
@@ -109,16 +109,16 @@ function __open_intro_screen {
             prev_lines=$LINES
         done
     } always {
-        __exit_intro
+        exit_intro
     }
 }
 
-function __run {
+run() {
     if (( RANDOM % 2 == 0 )); then
         neo --message="Enter da HACKERMAN 030 Mode" -D --fps=80 -S 8 -s -F -a
     else
-        __open_intro_screen
+        open_intro_screen
     fi
 }
 
-__run
+run
