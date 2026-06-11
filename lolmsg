@@ -67,38 +67,44 @@ function __lolmsg_output {
 }
 
 function __print_lolmsg_output {
-    # Calc. term dimmensions & figlet output width in cols.
     local -i t_cols=${COLUMNS}
     local -i t_lines=${LINES}
-    local -i tl_center=$((${t_lines}/2))
 
-    # Calculate msg size
-    local _str_cols=0 i c
-    for (( i=0; i<${#msg}; i++ )); do
-        _str_cols=$(( ${_str_cols} + ${characterset_cols[${msg:$i:1}]} ))
-    done
+    # Render once only for measuring actual wrapped height.
+    local fig_output
+    fig_output=$(figlet -Lcw $t_cols -f roman -- "$msg")
 
-    local msg_cols=${_str_cols}
+    local -a fig_lines
+    fig_lines=("${(@f)fig_output}")
 
-    # Calc. #times term width fits in output width, tells us the amt. of rows that figlet outputs.
-    local -i required_rows=$(( (${msg_cols}/${t_cols})+( (${msg_cols}%${t_cols}) > 0 ) ))
-
-    # Calc. output + center in lines, tells us where to start figlet output.
-    local -i required_lines=$((${required_rows}*${row_height}))
-    local -i ol_center=$((${required_lines}/2))
-    local -i start_output_at=$((${tl_center}-${ol_center}))
-
-    __lolmsg_output "${start_output_at}" "${msg}" 1
+    local -i fig_height=${#fig_lines}
+    local -i gap=2
+    local -i total_height=$fig_height
 
     if [[ $# == 1 ]]; then
-        # Get position after figlet output.
-        local -i occupied_lines=$((${start_output_at}+${required_lines}))
-        local -i extra_text_pos=$((${occupied_lines}+3))
-        local -i render_pos=$(( (${t_cols}/2) - ( ${#1} / 2) ))
+        total_height=$(( fig_height + gap + 1 ))
+    fi
 
-        echoti cup $extra_text_pos $render_pos; print "$1"
+    local -i start_output_at=$(( (t_lines - total_height) / 2 ))
+    (( start_output_at < 0 )) && start_output_at=0
+
+    # Preserve original render path so blink behavior stays intact.
+    __lolmsg_output "$start_output_at" "$msg" 1
+
+    if [[ $# == 1 ]]; then
+        local prompt=$1
+        local -i extra_text_pos=$(( start_output_at + fig_height + gap ))
+        local -i render_pos=$(( (t_cols - ${#prompt}) / 2 ))
+
+        (( render_pos < 0 )) && render_pos=0
+        (( extra_text_pos < 0 )) && extra_text_pos=0
+        (( extra_text_pos >= t_lines )) && extra_text_pos=$(( t_lines - 1 ))
+
+        echoti cup $extra_text_pos $render_pos
+        print -r -- "$prompt"
     fi
 }
+
 
 # (Experimental/W.I.P.) NCurses version.
 function __open_curses_intro() {
@@ -140,7 +146,7 @@ function __with_i_msg {
 
 function __exit_intro {
     echoti rmcup
-    echoti cup $(( (${t_lines}-${ph}) + 2 )) 0
+    echoti cup $(( (${LINES}-${ph}) + 2 )) 0
     echoti cnorm
 }
 
@@ -148,12 +154,46 @@ function __open_matrix_screen {
     neo --message=$(__with_i_msg)
 }
 
+function __update_tty_size {
+    local -a size
+    size=(${(s: :)$(stty size </dev/tty 2>/dev/null)})
+    (( ${#size} == 2 )) || return 1
+
+    LINES=$size[1]
+    COLUMNS=$size[2]
+}
+
 function __open_intro_screen {
     echoti civis
     echoti smcup
-    __with_i_msg
-    read -k1 -s
-    __exit_intro
+
+    {
+        local key prev_cols prev_lines
+
+        __update_tty_size || return 1
+        prev_cols=$COLUMNS
+        prev_lines=$LINES
+
+        while true; do
+            echoti clear
+            __with_i_msg
+
+            while true; do
+                if read -k1 -s -t 0.1 key </dev/tty 2>/dev/null; then
+                    return
+                fi
+
+                __update_tty_size || continue
+                (( COLUMNS == prev_cols && LINES == prev_lines )) && continue
+                break
+            done
+
+            prev_cols=$COLUMNS
+            prev_lines=$LINES
+        done
+    } always {
+        __exit_intro
+    }
 }
 
 #---------------------------------------------------------------------------------------------------------------------#
