@@ -30,34 +30,29 @@ function __update_tty_size {
     COLUMNS=$size[2]
 }
 
-# Print figlet, style depends on term being normal/vim-term.
+# Print pre-rendered figlet output, optionally enabling terminal blink.
 function __output_fig {
-    local text=$1
-    local -i width=$2
-    local curses=${3:-0}
-
-    local _output
-    _output=$(figlet -Lcw "$width" -f roman -- "$text")
+    local rendered_output=$1
+    local -i enable_blink=${2:-0}
 
     local _current_scheme _grad
     _current_scheme="$(is_dark)"
     [[ "$_current_scheme" == 0 ]] && _grad="warm" || _grad="rainbow"
 
-    if (( ! ${+MYVIMRC} && curses == 0 )); then
+    if (( enable_blink && ! ${+MYVIMRC} )); then
         echoti blink
     fi
 
-    print -r -- "$_output" | lolcrab -g "$_grad"
+    print -r -- "$rendered_output" | lolcrab -g "$_grad"
 }
 
 function __lolmsg_output {
     local -i top_pad=$1
-    local text=$2
+    local rendered_output=$2
     local -i bottom_pad=$3
-    local -i width=$4
 
     __pad_lines "$top_pad"
-    __output_fig "$text" "$width" 0
+    __output_fig "$rendered_output" 1
     __pad_lines "$bottom_pad"
 }
 
@@ -82,7 +77,7 @@ function __print_lolmsg_output {
     local -i start_output_at=$(( (t_lines - total_height) / 2 ))
     (( start_output_at < 0 )) && start_output_at=0
 
-    __lolmsg_output "$start_output_at" "$msg" 1 "$t_cols"
+    __lolmsg_output "$start_output_at" "$fig_output" 1
 
     if [[ $# == 1 ]]; then
         local prompt=$1
@@ -96,40 +91,6 @@ function __print_lolmsg_output {
         echoti cup "$extra_text_pos" "$render_pos"
         print -r -- "$prompt"
     fi
-}
-
-# (Experimental/W.I.P.) NCurses version.
-function __open_curses_intro() {
-    zmodload zsh/curses && {
-        local i
-
-        __update_tty_size || return 1
-
-        zcurses init
-        zcurses refresh
-
-        echoti civis
-
-        zcurses clear stdscr redraw
-        zcurses refresh stdscr
-
-        zcurses addwin intro "${LINES} ${COLUMNS}" 0 0
-        zcurses scroll intro off
-        zcurses attr intro blink
-
-        zcurses string intro "$(__print_lolmsg_output $'[ Press any key ]')"
-        zcurses refresh intro stdscr
-
-        zcurses timeout intro 0
-
-        until [[ $i == [\ ] ]]; do
-            zcurses input intro i
-        done
-    } always {
-        zcurses delwin intro
-        echoti cnorm
-        zcurses end
-    }
 }
 
 function __with_i_msg {
@@ -181,16 +142,10 @@ function __open_intro_screen {
 #---------------------------------------------------------------------------------------------------------------------#
 
 function __run {
-    local curses=${1:-0}
-
-    if [[ "$curses" == "curses" ]]; then
-        __open_curses_intro
+    if (( RANDOM % 2 == 0 )); then
+        neo --message="Enter da HACKERMAN 030 Mode" -D --fps=80 -S 8 -s -F -a
     else
-        if (( RANDOM % 2 == 0 )); then
-            neo --message="Enter da HACKERMAN 030 Mode" -D --fps=80 -S 8 -s -F -a
-        else
-            __open_intro_screen
-        fi
+        __open_intro_screen
     fi
 }
 
