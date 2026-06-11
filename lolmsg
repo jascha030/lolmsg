@@ -3,19 +3,11 @@
 emulate -L zsh
 
 local msg=$1
-local ph=6
-
-if (( ${+LOL_MSG_PROMPT_HEIGHT} )); then
-    ph=$LOL_MSG_PROMPT_HEIGHT
-fi
-
-[[ -n $2 ]] && ph=$2
-
-#---------------------------------------------------------------------------------------------------------------------#
 
 function __pad_lines {
     local -i n=$1
     local -i i
+
     for (( i = 0; i < n; ++i )); do
         print
     done
@@ -30,35 +22,24 @@ function __update_tty_size {
     COLUMNS=$size[2]
 }
 
-# Print pre-rendered figlet output, optionally enabling terminal blink.
 function __output_fig {
     local rendered_output=$1
-    local -i enable_blink=${2:-0}
-
     local _current_scheme _grad
+
     _current_scheme="$(is_dark)"
     [[ "$_current_scheme" == 0 ]] && _grad="warm" || _grad="rainbow"
 
-    if (( enable_blink && ! ${+MYVIMRC} )); then
+    if (( ! ${+MYVIMRC} )); then
         echoti blink
     fi
 
     print -r -- "$rendered_output" | lolcrab -g "$_grad"
 }
 
-function __lolmsg_output {
-    local -i top_pad=$1
-    local rendered_output=$2
-    local -i bottom_pad=$3
-
-    __pad_lines "$top_pad"
-    __output_fig "$rendered_output" 1
-    __pad_lines "$bottom_pad"
-}
-
 function __print_lolmsg_output {
-    local -i t_cols=${COLUMNS}
-    local -i t_lines=${LINES}
+    local prompt=$1
+    local -i t_cols=$COLUMNS
+    local -i t_lines=$LINES
 
     local fig_output
     fig_output=$(figlet -Lcw "$t_cols" -f roman -- "$msg")
@@ -70,17 +51,18 @@ function __print_lolmsg_output {
     local -i gap=2
     local -i total_height=$fig_height
 
-    if [[ $# == 1 ]]; then
+    if [[ -n "$prompt" ]]; then
         total_height=$(( fig_height + gap + 1 ))
     fi
 
     local -i start_output_at=$(( (t_lines - total_height) / 2 ))
     (( start_output_at < 0 )) && start_output_at=0
 
-    __lolmsg_output "$start_output_at" "$fig_output" 1
+    __pad_lines "$start_output_at"
+    __output_fig "$fig_output"
+    __pad_lines 1
 
-    if [[ $# == 1 ]]; then
-        local prompt=$1
+    if [[ -n "$prompt" ]]; then
         local -i extra_text_pos=$(( start_output_at + fig_height + gap ))
         local -i render_pos=$(( (t_cols - ${#prompt}) / 2 ))
 
@@ -93,17 +75,9 @@ function __print_lolmsg_output {
     fi
 }
 
-function __with_i_msg {
-    __print_lolmsg_output $'[ Press any key ]'
-}
-
 function __exit_intro {
     echoti rmcup
     echoti cnorm
-}
-
-function __open_matrix_screen {
-    neo --message="Enter da HACKERMAN 030 Mode"
 }
 
 function __open_intro_screen {
@@ -119,7 +93,7 @@ function __open_intro_screen {
 
         while true; do
             echoti clear
-            __with_i_msg
+            __print_lolmsg_output $'[ Press any key ]'
 
             while true; do
                 if read -k1 -s -t 0.1 key </dev/tty 2>/dev/null; then
@@ -138,8 +112,6 @@ function __open_intro_screen {
         __exit_intro
     }
 }
-
-#---------------------------------------------------------------------------------------------------------------------#
 
 function __run {
     if (( RANDOM % 2 == 0 )); then
