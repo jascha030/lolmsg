@@ -2,77 +2,71 @@
 
 emulate -L zsh
 
-# TODO: Options
-# TODO: Curses
-
-# This is a map of all character widths for the "roman" figlet font.
-typeset -A characterset_cols=(
-    ["a"]=9 ["A"]=15 ["b"]=10 ["B"]=12 ["c"]=9 ["C"]=11 ["d"]=10 ["D"]=13 ["e"]=9 ["E"]=12 ["f"]=8 ["F"]=12 ["g"]=10
-    ["G"]=13 ["h"]=11 ["H"]=13 ["i"]=5 ["I"]=5 ["j"]=8 ["J"]=7 ["k"]=11 ["K"]=12 ["l"]=5 ["L"]=12 ["m"]=17 ["M"]=16
-    ["n"]=11 ["N"]=14 ["o"]=9 ["O"]=12 ["p"]=10 ["P"]=12 ["q"]=10 ["Q"]=15 ["r"]=8 ["R"]=12 ["s"]=8 ["S"]=11 ["t"]=7
-    ["T"]=13 ["u"]=11 ["U"]=13 ["v"]=11 ["V"]=15 ["w"]=16 ["W"]=24 ["x"]=11 ["X"]=14 ["y"]=11 ["Y"]=13 ["z"]=10
-    ["Z"]=13 ["1"]=5 ["2"]=10 ["3"]=10 ["4"]=10 ["5"]=10 ["6"]=10 ["7"]=10 ["8"]=10 ["9"]=10 ["0"]=10 [" "]=3
-)
-
-local msg=$1 \
-    lol_anmial="lcat"            \
-    t_center=0                   \
-    char_height=7                \
-    line_margin=2                \
-    ph=6                         \
-    tl_center=0
-
-local row_height=$((${char_height}+${line_margin}))
+local msg=$1
+local ph=6
 
 if (( ${+LOL_MSG_PROMPT_HEIGHT} )); then
-    ph=$(( ${LOL_MSG_PROMPT_HEIGHT} ))
+    ph=$LOL_MSG_PROMPT_HEIGHT
 fi
 
-ph=$2
+[[ -n $2 ]] && ph=$2
 
 #---------------------------------------------------------------------------------------------------------------------#
 
-
-# Calc. output msg width.
-
 function __pad_lines {
-    printf '\n%.0s' {1.."$1"}
+    local -i n=$1
+    local -i i
+    for (( i = 0; i < n; ++i )); do
+        print
+    done
+}
+
+function __update_tty_size {
+    local -a size
+    size=(${(s: :)$(stty size </dev/tty 2>/dev/null)})
+    (( ${#size} == 2 )) || return 1
+
+    LINES=$size[1]
+    COLUMNS=$size[2]
 }
 
 # Print figlet, style depends on term being normal/vim-term.
 function __output_fig {
-    local curses
+    local text=$1
+    local -i width=$2
+    local curses=${3:-0}
 
-    [[ $# == 1 ]] && curses=0 || curses=1
+    local _output
+    _output=$(figlet -Lcw "$width" -f roman -- "$text")
 
-    local _output=$(figlet -Lcw $t_cols -f roman $1)
-    local _current_scheme="$(is_dark)"
-
-    [[ "$_current_scheme" == 0 ]] && local _grad="warm" || local _grad="rainbow"
+    local _current_scheme _grad
+    _current_scheme="$(is_dark)"
+    [[ "$_current_scheme" == 0 ]] && _grad="warm" || _grad="rainbow"
 
     if (( ! ${+MYVIMRC} && curses == 0 )); then
         echoti blink
     fi
 
-
-    print "$_output" | lolcrab -g "$_grad"
+    print -r -- "$_output" | lolcrab -g "$_grad"
 }
 
-
-# Print padding + figlet output.
 function __lolmsg_output {
-    __pad_lines  "$1"
-    __output_fig "$2"
-    __pad_lines  "$3"
+    local -i top_pad=$1
+    local text=$2
+    local -i bottom_pad=$3
+    local -i width=$4
+
+    __pad_lines "$top_pad"
+    __output_fig "$text" "$width" 0
+    __pad_lines "$bottom_pad"
 }
 
 function __print_lolmsg_output {
     local -i t_cols=${COLUMNS}
     local -i t_lines=${LINES}
 
-    # Render once only for measuring actual wrapped height.
     local fig_output
-    fig_output=$(figlet -Lcw $t_cols -f roman -- "$msg")
+    fig_output=$(figlet -Lcw "$t_cols" -f roman -- "$msg")
 
     local -a fig_lines
     fig_lines=("${(@f)fig_output}")
@@ -88,8 +82,7 @@ function __print_lolmsg_output {
     local -i start_output_at=$(( (t_lines - total_height) / 2 ))
     (( start_output_at < 0 )) && start_output_at=0
 
-    # Preserve original render path so blink behavior stays intact.
-    __lolmsg_output "$start_output_at" "$msg" 1
+    __lolmsg_output "$start_output_at" "$msg" 1 "$t_cols"
 
     if [[ $# == 1 ]]; then
         local prompt=$1
@@ -100,16 +93,17 @@ function __print_lolmsg_output {
         (( extra_text_pos < 0 )) && extra_text_pos=0
         (( extra_text_pos >= t_lines )) && extra_text_pos=$(( t_lines - 1 ))
 
-        echoti cup $extra_text_pos $render_pos
+        echoti cup "$extra_text_pos" "$render_pos"
         print -r -- "$prompt"
     fi
 }
-
 
 # (Experimental/W.I.P.) NCurses version.
 function __open_curses_intro() {
     zmodload zsh/curses && {
         local i
+
+        __update_tty_size || return 1
 
         zcurses init
         zcurses refresh
@@ -119,7 +113,7 @@ function __open_curses_intro() {
         zcurses clear stdscr redraw
         zcurses refresh stdscr
 
-        zcurses addwin intro "${t_lines} ${t_cols}" 0 0
+        zcurses addwin intro "${LINES} ${COLUMNS}" 0 0
         zcurses scroll intro off
         zcurses attr intro blink
 
@@ -138,29 +132,17 @@ function __open_curses_intro() {
     }
 }
 
-
-# "press any key" variant.
 function __with_i_msg {
     __print_lolmsg_output $'[ Press any key ]'
 }
 
 function __exit_intro {
     echoti rmcup
-    echoti cup $(( (${LINES}-${ph}) + 2 )) 0
     echoti cnorm
 }
 
 function __open_matrix_screen {
-    neo --message=$(__with_i_msg)
-}
-
-function __update_tty_size {
-    local -a size
-    size=(${(s: :)$(stty size </dev/tty 2>/dev/null)})
-    (( ${#size} == 2 )) || return 1
-
-    LINES=$size[1]
-    COLUMNS=$size[2]
+    neo --message="Enter da HACKERMAN 030 Mode"
 }
 
 function __open_intro_screen {
@@ -198,16 +180,13 @@ function __open_intro_screen {
 
 #---------------------------------------------------------------------------------------------------------------------#
 
-# Run the output.
 function __run {
-    local curses
-
-    [[ $# == 0 ]] && curses=0 || curses="$1"
+    local curses=${1:-0}
 
     if [[ "$curses" == "curses" ]]; then
         __open_curses_intro
     else
-        if ((RANDOM % 2 == 0)); then
+        if (( RANDOM % 2 == 0 )); then
             neo --message="Enter da HACKERMAN 030 Mode" -D --fps=80 -S 8 -s -F -a
         else
             __open_intro_screen
