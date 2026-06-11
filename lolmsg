@@ -1,22 +1,50 @@
 #!/usr/bin/env zsh
 
 emulate -L zsh
+setopt err_return no_unset pipe_fail
+
+zmodload -F zsh/terminfo b:echoti || {
+    print -u2 -- "${0:t}: failed to load zsh/terminfo builtin: echoti"
+    exit 1
+}
+
+[[ -n ${1-} ]] || {
+    print -u2 -- "usage: ${0:t} <message>"
+    exit 1
+}
+
+[[ -t 0 && -t 1 ]] || {
+    print -u2 -- "${0:t}: stdin and stdout must be ttys"
+    exit 1
+}
 
 local msg=$1
+local -i intro_cursor_hidden=0
+local -i intro_alt_screen=0
+
+require_dependencies() {
+    local cmd
+
+    for cmd in stty figlet lolcrab neo; do
+        (( $+commands[$cmd] )) || {
+            print -u2 -- "${0:t}: required command not found: $cmd"
+            return 1
+        }
+    done
+}
 
 pad_lines() {
-    local -i n=$1
-    local -i i
-
-    for (( i = 0; i < n; ++i )); do
-        print
-    done
+    local -i n=${1:-0}
+    (( n > 0 )) || return 0
+    repeat $n print
 }
 
 update_tty_size() {
     local -a size
-    size=(${(s: :)$(stty size </dev/tty 2>/dev/null)})
+
+    size=(${(s: :)$(stty size </dev/tty 2>/dev/null)}) || return 1
     (( ${#size} == 2 )) || return 1
+    [[ $size[1] == <-> && $size[2] == <-> ]] || return 1
 
     LINES=$size[1]
     COLUMNS=$size[2]
@@ -24,80 +52,93 @@ update_tty_size() {
 
 output_fig() {
     local rendered_output=$1
-    local _current_scheme _grad
+    local scheme=0
+    local grad
 
-    _current_scheme="$(is_dark)"
-    [[ "$_current_scheme" == 0 ]] && _grad="warm" || _grad="rainbow"
-
-    if (( ! ${+MYVIMRC} )); then
-        echoti blink
+    if (( $+functions[is_dark] )); then
+        scheme=$(is_dark 2>/dev/null) || scheme=0
     fi
 
-    print -r -- "$rendered_output" | lolcrab -g "$_grad"
+    [[ $scheme == 1 ]] && grad=rainbow || grad=warm
+
+    if (( ! ${+MYVIMRC} )); then
+        echoti blink 2>/dev/null || true
+    fi
+
+    print -r -- "$rendered_output" | lolcrab -g "$grad"
 }
 
 print_lolmsg_output() {
-    local prompt=$1
-    local -i t_cols=$COLUMNS
-    local -i t_lines=$LINES
-
+    local msg=$1
+    local prompt=${2-}
     local fig_output
-    fig_output=$(figlet -Lcw "$t_cols" -f roman -- "$msg")
-
     local -a fig_lines
-    fig_lines=("${(@f)fig_output}")
+    local -i fig_height gap total_height start_row
+    local -i prompt_row prompt_col
 
-    local -i fig_height=${#fig_lines}
-    local -i gap=2
-    local -i total_height=$fig_height
+    fig_output=$(figlet -Lcw "$COLUMNS" -f roman -- "$msg") || return 1
+    fig_lines=(${(f)fig_output})
 
-    if [[ -n "$prompt" ]]; then
-        total_height=$(( fig_height + gap + 1 ))
-    fi
+    fig_height=${#fig_lines}
+    gap=2
+    total_height=fig_height
 
-    local -i start_output_at=$(( (t_lines - total_height) / 2 ))
-    (( start_output_at < 0 )) && start_output_at=0
+    [[ -n $prompt ]] && (( total_height += gap + 1 ))
 
-    pad_lines "$start_output_at"
-    output_fig "$fig_output"
-    pad_lines 1
+    start_row=$(( (LINES - total_height) / 2 ))
+    (( start_row < 0 )) && start_row=0
 
-    if [[ -n "$prompt" ]]; then
-        local -i extra_text_pos=$(( start_output_at + fig_height + gap ))
-        local -i render_pos=$(( (t_cols - ${#prompt}) / 2 ))
+    pad_lines $start_row
+    output_fig "$fig_output" || return 1
+    print
 
-        (( render_pos < 0 )) && render_pos=0
-        (( extra_text_pos < 0 )) && extra_text_pos=0
-        (( extra_text_pos >= t_lines )) && extra_text_pos=$(( t_lines - 1 ))
+    [[ -n $prompt ]] || return 0
 
-        echoti cup "$extra_text_pos" "$render_pos"
-        print -r -- "$prompt"
-    fi
+    prompt_row=$(( start_row + fig_height + gap ))
+    prompt_col=$(( (COLUMNS - ${#prompt}) / 2 ))
+
+    (( prompt_col < 0 )) && prompt_col=0
+    (( prompt_row < 0 )) && prompt_row=0
+    (( prompt_row >= LINES )) && prompt_row=$(( LINES - 1 ))
+
+    echoti cup "$prompt_row" "$prompt_col" || return 1
+    print -r -- "$prompt"
 }
 
 exit_intro() {
-    echoti rmcup
-    echoti cnorm
+    if (( intro_alt_screen )); then
+        echoti rmcup 2>/dev/null || true
+        intro_alt_screen=0
+    fi
+
+    if (( intro_cursor_hidden )); then
+        echoti cnorm 2>/dev/null || true
+        intro_cursor_hidden=0
+    fi
 }
 
 open_intro_screen() {
-    echoti civis
-    echoti smcup
+    local key
+    local prev_cols prev_lines
 
     {
-        local key prev_cols prev_lines
+        echoti civis || return 1
+        intro_cursor_hidden=1
+
+        echoti smcup || return 1
+        intro_alt_screen=1
 
         update_tty_size || return 1
         prev_cols=$COLUMNS
         prev_lines=$LINES
 
         while true; do
-            echoti clear
-            print_lolmsg_output $'[ Press any key ]'
+            echoti clear || return 1
+            print_lolmsg_output "$msg" $'[ Press any key ]' || return 1
 
             while true; do
                 if read -k1 -s -t 0.1 key </dev/tty 2>/dev/null; then
-                    return
+                    return 0
                 fi
 
                 update_tty_size || continue
@@ -113,12 +154,19 @@ open_intro_screen() {
     }
 }
 
-run() {
+run_matrix() {
+    local msg=$1
+    neo --message="$msg" -D --fps=80 -S 8 -s -F -a
+}
+
+main() {
+    require_dependencies || return 1
+
     if (( RANDOM % 2 == 0 )); then
-        neo --message="Enter da HACKERMAN 030 Mode" -D --fps=80 -S 8 -s -F -a
+        run_matrix "$msg"
     else
         open_intro_screen
     fi
 }
 
-run
+main "$@"
